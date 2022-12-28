@@ -1,6 +1,8 @@
+use byteorder::{NativeEndian, ReadBytesExt};
 use std::io::{BufRead, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::process::Command;
+use chrono::Local;
 use threadpool::ThreadPool;
 
 use client_server::build_packet;
@@ -31,6 +33,7 @@ fn main() {
 
     for stream in listener.incoming() {
         let stream = stream.unwrap();
+        // stream.set_nonblocking(true).unwrap();
 
         println!("Connection accepted!");
 
@@ -41,17 +44,16 @@ fn main() {
 }
 
 fn handle_connection(mut stream: TcpStream) {
-    let mut request_len: [u8; 2] = [0, 0];
     // let mut request_bytes: [u8; 255] = [" ".as_bytes()[0]; 255];
+
 
     loop {
         println!("Loop iteration");
-        match stream.read_exact(&mut request_len) {
-            Ok(_) => {
-                let request_len = u16::from_ne_bytes(request_len) as usize;
-                let mut request = vec![0; request_len];
-                stream.read_exact(&mut request).unwrap();
-                let mut request_str = std::str::from_utf8(&request).unwrap().trim();
+        match stream.read_u16::<NativeEndian>() {
+            Ok(request_len) => {
+                let mut request_body = vec![0; request_len as usize];
+                stream.read_exact(&mut request_body).unwrap();
+                let mut request_str = std::str::from_utf8(&request_body).unwrap().trim();
 
                 println!("Received message: {}", request_str);
 
@@ -61,29 +63,35 @@ fn handle_connection(mut stream: TcpStream) {
                         stream
                             .write_all(&packet)
                             .expect("Failed at writing onto the stream");
-                        
                     }
                     "get_stream" => {
                         // let mut buffer = std::io::BufReader::new(stream);
-                        let mut request_bytes: [u8; 255] = [" ".as_bytes()[0]; 255];
+                        // let mut request_bytes: [u8; 255] = [" ".as_bytes()[0]; 255];
+                        let mut prev_info = fetch_info();
+                        let packet = build_packet(prev_info.as_bytes());
+                        // stream.read_to_string(&mut buffer).expect("Looping read failed");
+                        stream.write_all(&packet).expect("Looping write failed");
 
-                        while request_str != "stop" {
-                            // stream.read_to_string(&mut buffer).expect("Looping read failed");
-                            stream.read_exact(&mut request_bytes).unwrap();
-                            request_str = std::str::from_utf8(&request_bytes).unwrap().trim();
-                            stream
-                                .write_all(fetch_info().as_bytes())
-                                .expect("Looping write failed");
+                        loop {
+                            let info = fetch_info();
+                            if info != prev_info {
+                                println!("Sending reaction");
+                                let packet = build_packet(info.as_bytes());
+                                // stream.read_to_string(&mut buffer).expect("Looping read failed");
+                                if stream.write_all(&packet).is_err() {
+                                    break;
+                                };
+                            }
+                            prev_info = info;
                         }
-                        
                     }
                     _ => (),
                 }
             }
             Err(_) => {
                 println!("Handling connection over");
-                break
-            },
+                break;
+            }
         }
     }
 
@@ -91,8 +99,12 @@ fn handle_connection(mut stream: TcpStream) {
 }
 
 fn fetch_info() -> String {
+
+
+    let mut info = format!("{}\n", Local::now().format("%H:%M:%S")).as_bytes().to_owned();
+
     // mouse pointer info
-    let mut info = xdotool::mouse::get_mouse_location().stdout;
+    info.append(&mut xdotool::mouse::get_mouse_location().stdout);
 
     // keyboard descriptor info
     info.append(
@@ -102,8 +114,6 @@ fn fetch_info() -> String {
             .expect("Command execution failed")
             .stdout,
     );
-
-    info.push(String::from("\n").as_bytes()[0]);
 
     String::from_utf8(info).unwrap()
 }

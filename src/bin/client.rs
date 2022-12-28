@@ -1,7 +1,8 @@
-use std::io::{Read, Write, BufRead};
+use std::io::{BufRead, Read, Write};
 use std::net::TcpStream;
 use std::os::unix::net::{UnixListener, UnixStream};
 
+use byteorder::{NativeEndian, ReadBytesExt};
 use egui::accesskit::ActionRequest;
 
 use client_server::build_packet;
@@ -14,31 +15,35 @@ fn main() {
 
     let mut stream = TcpStream::connect(socket_addr).expect("Could not connect to socket");
 
-    write_request(b"get_once\n", &mut stream);
-    read_from_stream(&mut stream);
-    std::thread::sleep(std::time::Duration::from_secs(1));
-    write_request(b"get_once\n", &mut stream);
-    read_from_stream(&mut stream);
+    // write_request(b"get_once\n", &mut stream);
+    // read_from_stream(&mut stream);
+    // std::thread::sleep(std::time::Duration::from_secs(1));
+    // write_request(b"get_once\n", &mut stream);
+    // read_from_stream(&mut stream);
+    // write_request(b"get_once\n", &mut stream);
+    // read_from_stream(&mut stream);
+    // write_request(b"get_once\n", &mut stream);
+    // read_from_stream(&mut stream);
     // write_request(b"get_once\n", &mut stream);
     // read_from_stream(&mut stream);
 
-    // write_request("get_stream\n", &mut stream);
-    // read_from_stream(&mut stream);
+    write_request(b"get_stream\n", &mut stream);
+    loop {
+        println!("{}", read_response(&mut stream));
+    }
 
     // for i in 0..10 {
-    //     let mut response = String::new();
-    //     stream
-    //         .read_to_string(&mut response)
-    //         .expect("Failed at looping read");
-    //     println!("{i}\n{}", response);
-    //     // write_request("\n", &mut stream);
+    //     let response_len = stream.read_u16::<NativeEndian>().expect("Looping size read failed") as usize;
+    //     let mut response_body = vec![0; response_len];
+    //     stream.read_exact(&mut response_body).expect("Looping body read failed");
+    //     let response_str = std::str::from_utf8(&response_body).expect("Looping decode failed");
+    //     println!("{i}\n{}", response_str);
+    //     write_request(b"", &mut stream);
     // }
-    // write_request("stop", &mut stream)
+    // write_request(b"stop\n", &mut stream)
 }
 
-
-fn write_request(content: &[u8], stream: &mut TcpStream) {
-
+pub fn write_request(content: &[u8], stream: &mut TcpStream) {
     let request = build_packet(content);
 
     stream
@@ -47,7 +52,6 @@ fn write_request(content: &[u8], stream: &mut TcpStream) {
 
     println!("Request sent");
     println!("Waiting for response...");
-
 }
 
 // fn build_packet(content: &[u8]) -> Vec<u8> {
@@ -63,7 +67,7 @@ fn write_request(content: &[u8], stream: &mut TcpStream) {
 //     request
 // }
 
-fn read_from_stream(mut stream: &mut TcpStream) {
+pub fn read_response(stream: &mut TcpStream) -> String {
     let mut response_len: [u8; 2] = [0, 0];
 
     stream.read_exact(&mut response_len).unwrap();
@@ -75,9 +79,7 @@ fn read_from_stream(mut stream: &mut TcpStream) {
 
     stream.read_exact(&mut response_body).unwrap();
 
-    println!("{}", String::from_utf8(response_body).unwrap());
-
-
+    String::from_utf8(response_body).unwrap()
 
     // println!("Buffer will be created");
     // let buf_reader = std::io::BufReader::new(&mut stream);
@@ -85,7 +87,6 @@ fn read_from_stream(mut stream: &mut TcpStream) {
     // for line in buf_reader.lines() {
     //     println!("Received response: \n{}", line.unwrap())
     // }
-
 
     // let mut response = String::new();
     // stream
