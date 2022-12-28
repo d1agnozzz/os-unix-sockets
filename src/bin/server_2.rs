@@ -1,10 +1,13 @@
+use byteorder::{NativeEndian, ReadBytesExt};
+use chrono::Local;
 use std::io::{BufRead, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::os::unix::process::CommandExt;
 use std::process::Command;
-
 use threadpool::ThreadPool;
 
+use client_server::build_packet;
+
+const THREADS: usize = 16;
 const ADDRESS: &str = "127.0.0.1";
 const PORT: &str = "8787";
 
@@ -22,7 +25,7 @@ fn main() {
         }
     };
 
-    let pool = ThreadPool::new(8);
+    let pool = ThreadPool::new(THREADS);
 
     println!(
         "Server is now waiting for connections at {}!\n",
@@ -34,19 +37,10 @@ fn main() {
     //         std::thread::sleep(std::time::Duration::from_secs(3));
     //     });
     // }
-
-    let out = Command::new("ps")
-        .arg("-T")
-        .arg("-l")
-        .arg("-p")
-        .arg(format!("{}", std::process::id()))
-        .output()
-        .expect("Command execution failed");
-    println!("{}", String::from_utf8(out.stdout).unwrap());
-    println!("{}", std::process::id());
-
     for stream in listener.incoming() {
         let stream = stream.unwrap();
+
+        println!("Connection accepted!");
 
         pool.execute(|| {
             handle_connection(stream);
@@ -55,22 +49,73 @@ fn main() {
 }
 
 fn handle_connection(mut stream: TcpStream) {
-    let buf_reader = std::io::BufReader::new(&mut stream);
-    let request_line = buf_reader.lines().next();
-    let mut message = String::new();
-    stream
-        .read_to_string(&mut message)
-        .expect("Failed at reading the unix stream");
+    loop {
+        println!("Loop iteration");
+        match stream.read_u16::<NativeEndian>() {
+            Ok(request_len) => {
+                let mut request_body = vec![0; request_len as usize];
+                stream.read_exact(&mut request_body).unwrap();
+                let mut request_str = std::str::from_utf8(&request_body).unwrap().trim();
 
-    println!("Received message: {message}\nReplying... ");
+                println!("Received message: {}", request_str);
 
-    stream
-        .write_all(b"I hear you")
-        .expect("Failed at writing onto the stream");
+                match request_str {
+                    "get_once" => {
+                        let packet = build_packet(fetch_info().as_bytes());
+                        stream
+                            .write_all(&packet)
+                            .expect("Failed at writing onto the stream");
+                    }
+                    "get_stream" => {
+                        // let mut buffer = std::io::BufReader::new(stream);
+                        // let mut request_bytes: [u8; 255] = [" ".as_bytes()[0]; 255];
+                        let mut prev_info = fetch_info();
+                        let packet = build_packet(prev_info.as_bytes());
+                        // stream.read_to_string(&mut buffer).expect("Looping read failed");
+                        stream.write_all(&packet).expect("Looping write failed");
+
+                        loop {
+                            let info = fetch_info();
+                            if info != prev_info {
+                                let time_stamp = format!("{}\n", Local::now().format("%H:%M:%S"));
+                                println!("Sending reaction {}", time_stamp);
+                                let packet = build_packet(info.as_bytes());
+                                // stream.read_to_string(&mut buffer).expect("Looping read failed");
+                                if stream.write_all(&packet).is_err() {
+                                    break;
+                                };
+                            }
+                            prev_info = info;
+                        }
+                    }
+                    _ => (),
+                }
+            }
+            Err(_) => {
+                println!("Handling connection over");
+                break;
+            }
+        }
+    }
+
+    // }
 }
 
 fn fetch_info() -> String {
-    let pid = std::process::id();
+    let mut info = format!("PID: {}\n", std::process::id())
+        .as_bytes()
+        .to_owned();
 
-    todo!()
+    info.append(
+        &mut Command::new("ps")
+            .arg("-T")
+            .arg("-l")
+            .arg("-p")
+            .arg(format!("{}", std::process::id()))
+            .output()
+            .expect("Command execution failed")
+            .stdout,
+    );
+
+    String::from_utf8(info).unwrap()
 }

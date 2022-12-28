@@ -23,7 +23,7 @@ fn main() {
 struct AppState {
     name: String,
     addr: &'static str,
-    connection: TcpStream,
+    connection: Option<TcpStream>,
     output_contents: String,
     streaming: bool,
     age: u32,
@@ -34,7 +34,11 @@ impl Default for AppState {
         Self {
             name: "Arthur".to_owned(),
             addr: Servers::FIRST,
-            connection: TcpStream::connect(Servers::FIRST).expect("Failed at connection init"),
+            connection: if let Ok(con) = TcpStream::connect(Servers::FIRST) {
+                Some(con)
+            } else {
+                None
+            },
             output_contents: String::new(),
             streaming: false,
             age: 42,
@@ -70,44 +74,62 @@ impl eframe::App for AppState {
             ui.horizontal(|ui| {
                 let first = ui.selectable_value(addr, Servers::FIRST, "Server 1");
                 let second = ui.selectable_value(addr, Servers::SECOND, "Server 2");
+
                 if first.changed() {
                     *addr = "localhost:7878";
                     *output_contents = String::from_str(addr).unwrap();
+                    output_contents.push('\n');
+                    match TcpStream::connect(*addr) {
+                        Ok(stream) => *connection = Some(stream),
+                        Err(_) => {
+                            output_contents.push_str("\nFailed connecting. Maybe server offline?");
+                            *connection = None
+                        }
+                    };
                 }
                 if second.changed() {
                     *addr = "localhost:8787";
                     *output_contents = String::from_str(addr).unwrap();
+                    output_contents.push('\n');
+                    match TcpStream::connect(*addr) {
+                        Ok(stream) => *connection = Some(stream),
+                        Err(_) => {
+                            output_contents.push_str("\nFailed connecting. Maybe server offline?");
+                            *connection = None
+                        }
+                    };
                 }
             });
-            egui::ScrollArea::new([false, true])
-                .always_show_scroll(true)
-                .max_height(160f32)
-                .stick_to_bottom(true)
-                .show(ui, |ui| {
-                    let text_edit = ui.add(
-                        egui::widgets::text_edit::TextEdit::multiline(output_contents)
-                            .interactive(false),
-                    );
-                    if text_edit.changed() {};
-                });
-            ui.horizontal(|ui| {});
             ui.vertical_centered_justified(|ui| {
-                let button_single = ui.button("Request single");
-                if button_single.clicked() && !*streaming {
-                    write_request(b"get_once", connection);
-                    output_contents.push_str(&read_response(connection));
-                }
-                if ui.button("Request reactive").clicked() {
-                    if !*streaming {
-                        write_request(b"get_stream", connection);
-                        *streaming = true;
-                    } else {
-                        *streaming = false;
-                        *connection = TcpStream::connect(*addr).unwrap(); 
+                egui::ScrollArea::new([false, true])
+                    .always_show_scroll(true)
+                    .max_height(220f32)
+                    .stick_to_bottom(true)
+                    .show(ui, |ui| {
+                        let text_edit = ui.add(
+                            egui::widgets::text_edit::TextEdit::multiline(output_contents)
+                                .interactive(false),
+                        );
+                        if text_edit.changed() {};
+                    });
+                if let Some(connection) = connection {
+                    let button_single = ui.button("Request single");
+                    if button_single.clicked() && !*streaming {
+                        write_request(b"get_once", connection);
+                        output_contents.push_str(&read_response(connection));
                     }
-                }
-                if *streaming {
-                    output_contents.push_str(&read_response(connection));
+                    if ui.button("Request reactive").clicked() {
+                        if !*streaming {
+                            write_request(b"get_stream", connection);
+                            *streaming = true;
+                        } else {
+                            *streaming = false;
+                            *connection = TcpStream::connect(*addr).unwrap();
+                        }
+                    }
+                    if *streaming {
+                        output_contents.push_str(&read_response(connection));
+                    }
                 }
             });
             ui.add(egui::Slider::new(&mut self.age, 0..=120).text("age"));

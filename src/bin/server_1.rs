@@ -1,12 +1,13 @@
 use byteorder::{NativeEndian, ReadBytesExt};
+use chrono::Local;
 use std::io::{BufRead, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::process::Command;
-use chrono::Local;
 use threadpool::ThreadPool;
 
 use client_server::build_packet;
 
+const THREADS: usize = 16;
 const ADDRESS: &str = "127.0.0.1";
 const PORT: &str = "7878";
 
@@ -24,7 +25,7 @@ fn main() {
         }
     };
 
-    let pool = ThreadPool::new(8);
+    let pool = ThreadPool::new(THREADS);
 
     println!(
         "Server is now waiting for connections at {}!\n",
@@ -45,7 +46,6 @@ fn main() {
 
 fn handle_connection(mut stream: TcpStream) {
     // let mut request_bytes: [u8; 255] = [" ".as_bytes()[0]; 255];
-
 
     loop {
         println!("Loop iteration");
@@ -75,7 +75,8 @@ fn handle_connection(mut stream: TcpStream) {
                         loop {
                             let info = fetch_info();
                             if info != prev_info {
-                                println!("Sending reaction");
+                                let time_stamp = format!("{}\n", Local::now().format("%H:%M:%S"));
+                                println!("Sending reaction {}", time_stamp);
                                 let packet = build_packet(info.as_bytes());
                                 // stream.read_to_string(&mut buffer).expect("Looping read failed");
                                 if stream.write_all(&packet).is_err() {
@@ -99,9 +100,9 @@ fn handle_connection(mut stream: TcpStream) {
 }
 
 fn fetch_info() -> String {
-
-
-    let mut info = format!("{}\n", Local::now().format("%H:%M:%S")).as_bytes().to_owned();
+    let mut info = format!("{}\n", Local::now().format("%H:%M:%S"))
+        .as_bytes()
+        .to_owned();
 
     // mouse pointer info
     info.append(&mut xdotool::mouse::get_mouse_location().stdout);
