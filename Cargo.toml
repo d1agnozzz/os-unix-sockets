@@ -6,5 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "^1.0.68"
-gtk = { version = "0.5.4", package = "gtk4" }
+arrayvec = "0.7.2"
+byteorder = "1.4.3"
+chrono = "0.4.23"
+eframe = "0.20.1"
+egui = "0.20.1"
+threadpool = "1.8.1"
+tracing-subscriber = "0.3.16"
+xdotool = "0.0.2"
